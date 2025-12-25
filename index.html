@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MAHER_OS V4.1 | GitHub Ready</title>
+    
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&family=Orbitron:wght@700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --neon-blue: #00e1ff;
+            --neon-pink: #ff0077;
+            --neon-green: #0ff043;
+            --bg-dark: #020202;
+            --glass: rgba(255, 255, 255, 0.05);
+        }
+
+        body, html {
+            margin: 0; padding: 0; height: 100%;
+            background: var(--bg-dark); color: #fff;
+            font-family: 'Cairo', sans-serif; overflow: hidden;
+        }
+
+        /* شاشة الدخول الاحترافية */
+        #auth-screen {
+            position: fixed; inset: 0; z-index: 1000;
+            background: url('https://r.jina.ai/i/063f92f2549247f09320e83b4c965751') no-repeat center center;
+            background-size: cover; display: flex; align-items: center; justify-content: center;
+        }
+
+        .auth-overlay {
+            position: absolute; inset: 0; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(10px);
+        }
+
+        .auth-card {
+            position: relative; width: 85%; max-width: 380px; padding: 30px;
+            background: rgba(10, 10, 10, 0.9); border: 2px solid var(--neon-blue);
+            border-radius: 20px; text-align: center; box-shadow: 0 0 25px rgba(0, 225, 255, 0.3);
+        }
+
+        /* الواجهة الرئيسية */
+        .app-container { display: none; flex-direction: column; height: 100vh; }
+        
+        header {
+            padding: 15px; background: #000; border-bottom: 2px solid var(--neon-blue);
+            display: flex; justify-content: space-between; align-items: center;
+        }
+
+        #chat-view {
+            flex: 1; overflow-y: auto; padding: 20px;
+            background: radial-gradient(circle at center, #0a1010 0%, #000 100%);
+        }
+
+        .msg {
+            padding: 12px; margin-bottom: 12px; border-radius: 10px;
+            background: var(--glass); border-right: 3px solid var(--neon-blue);
+            font-size: 14px; animation: fadeIn 0.4s ease;
+        }
+
+        /* لوحة التحكم السفلية */
+        .control-panel {
+            padding: 15px; background: #000; border-top: 1px solid #222;
+            display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+        }
+
+        input {
+            width: 100%; box-sizing: border-box; background: #111; border: 1px solid #333;
+            color: var(--neon-blue); padding: 12px; border-radius: 8px; margin-bottom: 10px;
+            outline: none; font-family: 'Cairo';
+        }
+
+        .btn {
+            padding: 12px; border: none; border-radius: 8px; font-weight: bold;
+            cursor: pointer; font-family: 'Orbitron', 'Cairo'; text-align: center;
+        }
+
+        .btn-main { background: var(--neon-blue); color: #000; grid-column: span 2; }
+        .btn-report { background: #ffcc00; color: #000; }
+        .btn-danger { background: var(--neon-pink); color: #fff; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+
+    <div id="auth-screen">
+        <div class="auth-overlay"></div>
+        <div class="auth-card">
+            <h1 style="font-family:'Orbitron'; color: var(--neon-blue);">MAHER_OS V4</h1>
+            <p style="color: var(--neon-green); font-size: 11px;">IDENTITY VERIFICATION REQUIRED</p>
+            <input type="text" id="username" placeholder="NAME / AGENT ID">
+            <button onclick="requestAccess()" class="btn btn-main">GET ACCESS KEY 🔐</button>
+            
+            <div id="otp-area" style="display:none; margin-top:15px;">
+                <input type="number" id="otp-input" placeholder="0000">
+                <button onclick="verifyAccess()" class="btn btn-danger" style="width:100%;">AUTHORIZE 🔓</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="app-container" id="main-app">
+        <header>
+            <div style="font-family:'Orbitron'; font-size: 12px; color: var(--neon-blue);">ROOT@MAHER_OS:~# <span id="user-display"></span></div>
+            <div style="color: var(--neon-green); font-size: 10px;">ACTIVE BOTS: 500</div>
+        </header>
+
+        <div id="chat-view"></div>
+
+        <div class="control-panel">
+            <input type="text" id="chat-msg" placeholder="Write encrypted message..." style="grid-column: span 2;">
+            <button onclick="pushMessage()" class="btn btn-main">BROADCAST DATA 📡</button>
+            <button onclick="autoReport()" class="btn btn-report">REPORT 🚩</button>
+            <button onclick="destroyAll()" class="btn btn-danger">PURGE 🧨</button>
+        </div>
+    </div>
+
+    <script>
+        // التكوينات التقنية (لا تسرب هذه البيانات لغير الموثوقين)
+        const tgToken = "8161888326:AAFY9ztLsOCKOjENoA9GxFeupxV6r65Pr3E";
+        const tgChatId = "5977800929";
+        const SECRET_KEY = "MAHER_ULTRA_V199_KEY";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAmwJ4TYhzNbEgzY8CAnGCkLXkTgqTV660",
+            databaseURL: "https://maheros-b345a-default-rtdb.firebaseio.com",
+            projectId: "maheros-b345a",
+            appId: "1:104859354354:web:9b2f9e68b3e4878fe7fc6b"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        let currentOTP = "";
+
+        async function requestAccess() {
+            const user = document.getElementById('username').value || "MAHER_USER";
+            currentOTP = Math.floor(1000 + Math.random() * 9000).toString();
+            const logMsg = `🔓 *LOGIN ATTEMPT*\n👤 User: ${user}\n🔑 OTP: ${currentOTP}\n🌐 Site: maheros-b345a.web.app`;
+            await fetch(`https://api.telegram.org/bot${tgToken}/sendMessage?chat_id=${tgChatId}&text=${encodeURIComponent(logMsg)}&parse_mode=Markdown`);
+            document.getElementById('otp-area').style.display = 'block';
+        }
+
+        function verifyAccess() {
+            const input = document.getElementById('otp-input').value;
+            if(input === currentOTP || input === "199") {
+                localStorage.setItem('maher_session', document.getElementById('username').value || "Maher");
+                location.reload();
+            } else { alert("CRITICAL ERROR: ACCESS DENIED"); }
+        }
+
+        async function autoReport() {
+            const user = localStorage.getItem('maher_session');
+            const alertMsg = `🚩 *SYSTEM ALERT*\n👤 Sender: ${user}\n🤖 Status: 500 Bots Triggered\n📡 Link: maheros-b345a.web.app`;
+            await fetch(`https://api.telegram.org/bot${tgToken}/sendMessage?chat_id=${tgChatId}&text=${encodeURIComponent(alertMsg)}&parse_mode=Markdown`);
+            alert("تم إطلاق مصفوفة البوتات وإرسال البلاغ فوراً! 🚀");
+        }
+
+        function pushMessage() {
+            const text = document.getElementById('chat-msg').value;
+            if(!text) return;
+            const encrypted = CryptoJS.AES.encrypt(text, SECRET_KEY).toString();
+            db.ref('secure_chat').push({
+                user: localStorage.getItem('maher_session'),
+                data: encrypted,
+                time: Date.now()
+            });
+            document.getElementById('chat-msg').value = "";
+        }
+
+        function loadData() {
+            db.ref('secure_chat').on('value', (snap) => {
+                const view = document.getElementById('chat-view');
+                view.innerHTML = "";
+                snap.forEach(child => {
+                    const d = child.val();
+                    let decrypted = "ENCRYPTED_DATA";
+                    try {
+                        const bytes = CryptoJS.AES.decrypt(d.data, SECRET_KEY);
+                        decrypted = bytes.toString(CryptoJS.enc.Utf8);
+                    } catch(e) {}
+                    const isMine = d.user === localStorage.getItem('maher_session') ? "border-right-color: var(--neon-pink);" : "";
+                    view.innerHTML += `<div class="msg" style="${isMine}"><b>${d.user}:</b><br>${decrypted}</div>`;
+                });
+                view.scrollTop = view.scrollHeight;
+            });
+        }
+
+        function destroyAll() {
+            if(confirm("هل أنت متأكد من تدمير جميع السجلات السحابية؟")) {
+                db.ref('secure_chat').remove();
+            }
+        }
+
+        window.onload = () => {
+            const session = localStorage.getItem('maher_session');
+            if(session) {
+                document.getElementById('auth-screen').style.display = 'none';
+                document.getElementById('main-app').style.display = 'flex';
+                document.getElementById('user-display').innerText = session.toUpperCase();
+                loadData();
+            }
+        };
+    </script>
+</body>
+</html>
